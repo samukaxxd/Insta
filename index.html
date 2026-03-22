@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conversor PDF → Excel (ANP)</title>
+
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- SheetJS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f0f4f8;
+      color: #1a202c;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    header h1 {
+      font-size: 1.8rem;
+      color: #2b6cb0;
+    }
+    header p {
+      margin-top: .4rem;
+      color: #4a5568;
+      font-size: .95rem;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.08);
+      padding: 2rem;
+      width: 100%;
+      max-width: 760px;
+      margin-bottom: 1.5rem;
+    }
+
+    /* Drop zone */
+    #dropzone {
+      border: 2.5px dashed #90cdf4;
+      border-radius: 10px;
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: background .2s, border-color .2s;
+    }
+    #dropzone.drag-over {
+      background: #ebf8ff;
+      border-color: #3182ce;
+    }
+    #dropzone svg { color: #63b3ed; margin-bottom: .75rem; }
+    #dropzone p { color: #4a5568; font-size: .95rem; }
+    #dropzone strong { color: #2b6cb0; }
+    #fileInput { display: none; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .6rem 1.4rem;
+      border: none;
+      border-radius: 7px;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: #3182ce; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #2c5282; }
+    .btn-success { background: #38a169; color: #fff; }
+    .btn-success:hover:not(:disabled) { background: #276749; }
+
+    .btn-row {
+      display: flex;
+      gap: .75rem;
+      flex-wrap: wrap;
+      margin-top: 1.25rem;
+    }
+
+    /* Status / progress */
+    #status {
+      margin-top: 1rem;
+      font-size: .9rem;
+      color: #4a5568;
+      min-height: 1.2em;
+    }
+    .status-ok   { color: #276749 !important; font-weight: 600; }
+    .status-err  { color: #c53030 !important; font-weight: 600; }
+    .status-busy { color: #2b6cb0 !important; }
+
+    #progressBar {
+      height: 6px;
+      background: #bee3f8;
+      border-radius: 4px;
+      margin-top: .6rem;
+      overflow: hidden;
+      display: none;
+    }
+    #progressFill {
+      height: 100%;
+      background: #3182ce;
+      border-radius: 4px;
+      transition: width .25s;
+    }
+
+    /* Preview table */
+    #previewSection { display: none; }
+    #previewSection h2 {
+      font-size: 1.1rem;
+      margin-bottom: .75rem;
+      color: #2d3748;
+    }
+    .sheet-label {
+      font-size: .8rem;
+      font-weight: 700;
+      color: #2b6cb0;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-bottom: .4rem;
+    }
+    .table-wrapper {
+      overflow-x: auto;
+      margin-bottom: 1.2rem;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+    }
+    table {
+      border-collapse: collapse;
+      font-size: .82rem;
+      width: 100%;
+    }
+    th {
+      background: #2b6cb0;
+      color: #fff;
+      padding: .45rem .65rem;
+      text-align: left;
+      white-space: nowrap;
+    }
+    td {
+      padding: .4rem .65rem;
+      border-top: 1px solid #e2e8f0;
+      white-space: nowrap;
+    }
+    tr:nth-child(even) td { background: #f7fafc; }
+
+    .truncate-note {
+      font-size: .78rem;
+      color: #718096;
+      margin-top: .3rem;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📄 → 📊 Conversor PDF para Excel</h1>
+  <p>Extrai tabelas e dados de PDFs (relatórios ANP) e gera um arquivo <strong>.xlsx</strong> — tudo no navegador, sem instalação.</p>
+</header>
+
+<!-- Upload card -->
+<div class="card">
+  <div id="dropzone" role="button" tabindex="0" aria-label="Soltar PDF aqui ou clicar para selecionar">
+    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M12 2a1 1 0 0 1 .707.293l4 4a1 1 0 0 1-1.414 1.414L13 5.414V15a1 1 0 1 1-2 0V5.414L8.707 7.707A1 1 0 0 1 7.293 6.293l4-4A1 1 0 0 1 12 2z"/>
+      <path d="M4 17a1 1 0 0 1 1 1v1h14v-1a1 1 0 1 1 2 0v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a1 1 0 0 1 1-1z"/>
+    </svg>
+    <p>Arraste e solte um arquivo <strong>PDF</strong> aqui</p>
+    <p style="margin-top:.3rem">ou <strong>clique para selecionar</strong></p>
+  </div>
+  <input type="file" id="fileInput" accept=".pdf,application/pdf" />
+
+  <div id="status"></div>
+  <div id="progressBar"><div id="progressFill" style="width:0%"></div></div>
+
+  <div class="btn-row">
+    <button class="btn btn-primary" id="btnConvert" disabled>⚙️ Converter</button>
+    <button class="btn btn-success" id="btnDownload" disabled>⬇️ Baixar Excel</button>
+  </div>
+</div>
+
+<!-- Preview card -->
+<div class="card" id="previewSection">
+  <h2>Pré-visualização dos dados extraídos</h2>
+  <div id="previewContent"></div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// PDF.js worker
+// ─────────────────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ─────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────
+let pdfFile = null;
+let workbook = null;   // XLSX workbook ready to download
+
+// ─────────────────────────────────────────────
+// UI helpers
+// ─────────────────────────────────────────────
+const dropzone    = document.getElementById('dropzone');
+const fileInput   = document.getElementById('fileInput');
+const btnConvert  = document.getElementById('btnConvert');
+const btnDownload = document.getElementById('btnDownload');
+const statusEl    = document.getElementById('status');
+const progressBar = document.getElementById('progressBar');
+const progressFill= document.getElementById('progressFill');
+const previewSec  = document.getElementById('previewSection');
+const previewCont = document.getElementById('previewContent');
+
+function setStatus(msg, type = '') {
+  statusEl.textContent = msg;
+  statusEl.className = type ? `status-${type}` : '';
+}
+
+function setProgress(pct) {
+  progressBar.style.display = pct === null ? 'none' : 'block';
+  if (pct !== null) progressFill.style.width = pct + '%';
+}
+
+function acceptFile(file) {
+  if (!file || file.type !== 'application/pdf') {
+    setStatus('Por favor, selecione um arquivo PDF válido.', 'err');
+    return;
+  }
+  pdfFile = file;
+  workbook = null;
+  btnConvert.disabled  = false;
+  btnDownload.disabled = true;
+  previewSec.style.display = 'none';
+  setStatus(`Arquivo selecionado: ${file.name}`, 'ok');
+  setProgress(null);
+}
+
+// ─────────────────────────────────────────────
+// Drag-and-drop
+// ─────────────────────────────────────────────
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('drag-over');
+  acceptFile(e.dataTransfer.files[0]);
+});
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+fileInput.addEventListener('change', () => acceptFile(fileInput.files[0]));
+
+// ─────────────────────────────────────────────
+// Number conversion (Brazilian format)
+// ─────────────────────────────────────────────
+function tryParseNumber(text) {
+  if (!text || !text.trim()) return text;
+  const t = text.trim();
+
+  if (t.includes(',')) {
+    // BR: ponto = milhar, vírgula = decimal  → "5,89" or "1.234,56"
+    const converted = t.replace(/\./g, '').replace(',', '.');
+    const n = parseFloat(converted);
+    return isNaN(n) ? t : n;
+  }
+  // Standard float / integer
+  const n = parseFloat(t);
+  return isNaN(n) ? t : n;
+}
+
+// ─────────────────────────────────────────────
+// Table detection from positioned text items
+// ─────────────────────────────────────────────
+const ROW_TOLERANCE = 4;   // y-distance to group into same row
+const COL_GAP       = 20;  // x-distance gap between columns
+
+function groupIntoRows(items) {
+  // items: [{x, y, text}, ...]
+  // PDF coords: y=0 is bottom; we sort descending so top of page comes first
+  items.sort((a, b) => b.y - a.y || a.x - b.x);
+
+  const rows = [];
+  let row = [];
+  let rowY = null;
+
+  for (const item of items) {
+    if (!item.text.trim()) continue;
+    if (rowY === null || Math.abs(item.y - rowY) <= ROW_TOLERANCE) {
+      row.push(item);
+      if (rowY === null) rowY = item.y;
+    } else {
+      if (row.length) rows.push(row);
+      row = [item];
+      rowY = item.y;
+    }
+  }
+  if (row.length) rows.push(row);
+
+  // Sort each row by x (left → right)
+  rows.forEach(r => r.sort((a, b) => a.x - b.x));
+  return rows;
+}
+
+function detectColumnBoundaries(rows) {
+  // Collect all distinct x starts, then cluster with COL_GAP
+  const xs = [];
+  rows.forEach(row => row.forEach(item => xs.push(item.x)));
+  xs.sort((a, b) => a - b);
+
+  const boundaries = [];
+  for (const x of xs) {
+    if (!boundaries.length || x - boundaries[boundaries.length - 1] > COL_GAP) {
+      boundaries.push(x);
+    }
+  }
+  return boundaries;
+}
+
+function assignToColumns(rows, boundaries) {
+  // Returns 2-D array [row][col] = text
+  return rows.map(row => {
+    const cells = new Array(boundaries.length).fill('');
+    for (const item of row) {
+      // Find the nearest boundary
+      let best = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < boundaries.length; i++) {
+        const d = Math.abs(item.x - boundaries[i]);
+        if (d < bestDist) { bestDist = d; best = i; }
+      }
+      // Append if multiple items land in the same cell (wrapped text)
+      cells[best] = cells[best] ? cells[best] + ' ' + item.text : item.text;
+    }
+    return cells;
+  });
+}
+
+function isTabular(grid) {
+  if (grid.length < 2) return false;
+  const colCounts = grid.map(r => r.filter(c => c.trim()).length);
+  const avg = colCounts.reduce((a, b) => a + b, 0) / colCounts.length;
+  return avg >= 2;
+}
+
+function removeEmptyCols(grid) {
+  if (!grid.length) return grid;
+  const colCount = grid[0].length;
+  const keepCols = [];
+  for (let c = 0; c < colCount; c++) {
+    if (grid.some(r => r[c] && r[c].trim())) keepCols.push(c);
+  }
+  return grid.map(r => keepCols.map(c => r[c]));
+}
+
+function ensureUniqueHeaders(headers) {
+  const seen = {};
+  return headers.map((h, i) => {
+    const name = (h && h.trim()) ? h.trim() : `Coluna_${i + 1}`;
+    if (seen[name] !== undefined) {
+      seen[name]++;
+      return `${name}_${seen[name]}`;
+    }
+    seen[name] = 0;
+    return name;
+  });
+}
+
+function convertNumbers(grid) {
+  return grid.map(row => row.map(cell => tryParseNumber(cell)));
+}
+
+// ─────────────────────────────────────────────
+// Main PDF extraction
+// ─────────────────────────────────────────────
+async function extractFromPdf(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pageCount = pdf.numPages;
+
+  const sheets = [];   // [{name, data: [[…], […], …]}, …]
+
+  for (let p = 1; p <= pageCount; p++) {
+    setProgress(Math.round((p - 1) / pageCount * 90));
+    setStatus(`Processando página ${p} de ${pageCount}…`, 'busy');
+
+    const page    = await pdf.getPage(p);
+    const content = await page.getTextContent();
+
+    // Build item list with x, y, text
+    const items = content.items.map(item => ({
+      x:    item.transform[4],
+      y:    item.transform[5],
+      text: item.str
+    }));
+
+    if (!items.length) continue;
+
+    const rows      = groupIntoRows(items);
+    const boundaries= detectColumnBoundaries(rows);
+    let   grid      = assignToColumns(rows, boundaries);
+    grid = removeEmptyCols(grid);
+
+    if (!grid.length) continue;
+
+    if (isTabular(grid)) {
+      const headers = ensureUniqueHeaders(grid[0]);
+      const body    = convertNumbers(grid.slice(1).filter(r => r.some(c => c !== '')));
+      if (body.length) {
+        sheets.push({
+          name: pageCount === 1 ? 'Dados' : `Pag_${p}`,
+          data: [headers, ...body]
+        });
+      }
+    } else {
+      // Fallback: plain text rows
+      const lines = rows
+        .map(r => r.map(i => i.text).join(' ').trim())
+        .filter(Boolean);
+      if (lines.length) {
+        sheets.push({
+          name: pageCount === 1 ? 'Dados' : `Pag_${p}`,
+          data: [['Texto'], ...lines.map(l => [l])]
+        });
+      }
+    }
+  }
+
+  setProgress(100);
+  return sheets;
+}
+
+// ─────────────────────────────────────────────
+// Build XLSX workbook
+// ─────────────────────────────────────────────
+function buildWorkbook(sheets) {
+  const wb = XLSX.utils.book_new();
+  for (const sheet of sheets) {
+    const ws = XLSX.utils.aoa_to_sheet(sheet.data);
+    // Auto column widths (rough estimate)
+    const cols = sheet.data[0].map((_, ci) => {
+      const maxLen = Math.max(...sheet.data.map(row => {
+        const v = row[ci];
+        return v !== undefined && v !== null ? String(v).length : 0;
+      }));
+      return { wch: Math.min(Math.max(maxLen + 2, 10), 50) };
+    });
+    ws['!cols'] = cols;
+    XLSX.utils.book_append_sheet(wb, ws, sheet.name.slice(0, 31));
+  }
+  return wb;
+}
+
+// ─────────────────────────────────────────────
+// Preview rendering
+// ─────────────────────────────────────────────
+const MAX_PREVIEW_ROWS = 50;
+
+function renderPreview(sheets) {
+  previewCont.innerHTML = '';
+  for (const sheet of sheets) {
+    const label = document.createElement('div');
+    label.className = 'sheet-label';
+    label.textContent = `Aba: ${sheet.name} — ${sheet.data.length - 1} linha(s)`;
+    previewCont.appendChild(label);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-wrapper';
+
+    const tbl  = document.createElement('table');
+    const thead = document.createElement('thead');
+    const tbody = document.createElement('tbody');
+
+    const headerRow = document.createElement('tr');
+    (sheet.data[0] || []).forEach(h => {
+      const th = document.createElement('th');
+      th.textContent = h;
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+
+    const rows = sheet.data.slice(1, MAX_PREVIEW_ROWS + 1);
+    rows.forEach(row => {
+      const tr = document.createElement('tr');
+      row.forEach(cell => {
+        const td = document.createElement('td');
+        td.textContent = cell ?? '';
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+
+    tbl.appendChild(thead);
+    tbl.appendChild(tbody);
+    wrapper.appendChild(tbl);
+    previewCont.appendChild(wrapper);
+
+    if (sheet.data.length - 1 > MAX_PREVIEW_ROWS) {
+      const note = document.createElement('p');
+      note.className = 'truncate-note';
+      note.textContent = `Mostrando ${MAX_PREVIEW_ROWS} de ${sheet.data.length - 1} linhas.`;
+      previewCont.appendChild(note);
+    }
+  }
+  previewSec.style.display = 'block';
+}
+
+// ─────────────────────────────────────────────
+// Convert button handler
+// ─────────────────────────────────────────────
+btnConvert.addEventListener('click', async () => {
+  if (!pdfFile) return;
+
+  btnConvert.disabled  = true;
+  btnDownload.disabled = true;
+  workbook = null;
+  previewSec.style.display = 'none';
+
+  setStatus('Carregando PDF…', 'busy');
+  setProgress(0);
+
+  try {
+    const sheets = await extractFromPdf(pdfFile);
+
+    if (!sheets.length) {
+      setStatus('Nenhum dado encontrado no PDF.', 'err');
+      setProgress(null);
+      btnConvert.disabled = false;
+      return;
+    }
+
+    workbook = buildWorkbook(sheets);
+    renderPreview(sheets);
+
+    const totalRows = sheets.reduce((s, sh) => s + sh.data.length - 1, 0);
+    setStatus(`✅ Extração concluída — ${totalRows} linha(s) em ${sheets.length} aba(s).`, 'ok');
+    setProgress(null);
+    btnDownload.disabled = false;
+  } catch (err) {
+    console.error(err);
+    setStatus('Erro ao processar o PDF: ' + err.message, 'err');
+    setProgress(null);
+  }
+
+  btnConvert.disabled = false;
+});
+
+// ─────────────────────────────────────────────
+// Download button handler
+// ─────────────────────────────────────────────
+btnDownload.addEventListener('click', () => {
+  if (!workbook) return;
+  const baseName = pdfFile ? pdfFile.name.replace(/\.pdf$/i, '') : 'resultado';
+  XLSX.writeFile(workbook, baseName + '.xlsx');
+});
+</script>
+</body>
+</html>
